@@ -52,7 +52,7 @@ namespace BasselTech
             #endregion
 
             #region Delegates and Constants
-
+            private LowLevelKeyboardProc procDelegate;
             private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
             private const int WH_KEYBOARD_LL = 13;
             private const int WM_KEYDOWN = 0x0100;
@@ -77,6 +77,7 @@ namespace BasselTech
 
             public UsbBarcodeScanner()
             {
+                this.procDelegate = KeyboardHookCallback;
                 _timer.Interval = 20;
                 _timer.Tick += (sender, args) => _keys.Clear();
                 _timer.Stop();
@@ -86,7 +87,7 @@ namespace BasselTech
             {
                 if (IsCapturing())
                     return;
-                _hookId = SetHook(KeyboardHookCallback);
+                _hookId = SetHook(this.procDelegate);
                 _timer.Start();
             }
 
