@@ -75,10 +75,10 @@ namespace BasselTech
 
             #region Constructor
 
-            public UsbBarcodeScanner()
+            public UsbBarcodeScanner(int scannerTypingInterval = 20)
             {
                 this.procDelegate = KeyboardHookCallback;
-                _timer.Interval = 20;
+                _timer.Interval = scannerTypingInterval;
                 _timer.Tick += (sender, args) => _keys.Clear();
                 _timer.Stop();
             }
