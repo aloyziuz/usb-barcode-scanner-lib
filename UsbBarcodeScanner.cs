@@ -8,6 +8,17 @@ namespace BasselTech
 {
     namespace UsbBarcodeScanner
     {
+        public enum KeyboardKeyDirection
+        {
+            UP, DOWN
+        }
+
+        public class KeyStroke
+        {
+            public KeyboardKeyDirection Direction { get; set; }
+            public Keys Key { get; set; }
+        }
+
         public class BarcodeScannedEventArgs : EventArgs
         {
             public BarcodeScannedEventArgs(string barcode)
@@ -52,17 +63,19 @@ namespace BasselTech
             #endregion
 
             #region Delegates and Constants
+
             private LowLevelKeyboardProc procDelegate;
             private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
             private const int WH_KEYBOARD_LL = 13;
             private const int WM_KEYDOWN = 0x0100;
+            private const int WM_KEYUP = 0x0101;
 
             #endregion
 
             #region Private Fields
 
             private static IntPtr _hookId = IntPtr.Zero;
-            private readonly List<Keys> _keys = new List<Keys>();
+            private readonly List<KeyStroke> _keys = new List<KeyStroke>();
             private readonly Timer _timer = new Timer();
 
             #endregion
@@ -79,7 +92,9 @@ namespace BasselTech
             {
                 this.procDelegate = KeyboardHookCallback;
                 _timer.Interval = scannerTypingInterval;
-                _timer.Tick += (sender, args) => _keys.Clear();
+                _timer.Tick += (sender, args) => {
+                    _keys.Clear(); 
+                };
                 _timer.Stop();
             }
 
@@ -123,17 +138,25 @@ namespace BasselTech
             {
                 var barcodeBuilder = new StringBuilder();
                 var shiftFlag = false;
-
-                foreach (var key in _keys)
+                                
+                foreach (var keystroke in _keys)
                 {
-                    if (key == Keys.ShiftKey || key == Keys.LShiftKey || key == Keys.RShiftKey)
+                    var isShiftKey = IsShiftKey(keystroke.Key);
+
+                    //if shift is pressed, apply shift flag
+                    if (isShiftKey && keystroke.Direction == KeyboardKeyDirection.DOWN)
                     {
                         shiftFlag = true;
                         continue;
                     }
+                    //if shift key is released, remove shift flag
+                    else if (isShiftKey && keystroke.Direction == KeyboardKeyDirection.UP)
+                    {
+                        shiftFlag = false;
+                        continue;
+                    }
 
-                    barcodeBuilder.Append(KeyCodeToUnicode(key, shiftFlag));
-                    shiftFlag = false;
+                    barcodeBuilder.Append(KeyCodeToUnicode(keystroke.Key, shiftFlag));
                 }
 
                 return barcodeBuilder.ToString();
@@ -160,30 +183,52 @@ namespace BasselTech
             {
                 if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN)
                 {
-                    // Extract the virtual key code
-                    var vkCode = Marshal.ReadInt32(lParam);
-
-                    // Convert the virtual key code to a Keys enum value
-                    var key = (Keys)vkCode;
-
+                    var key = this.GetKey(lParam);
                     _timer.Stop();
+
                     if (key == Keys.Enter)
                     {
                         if (_keys.Count > 0)
                         {
                             var barcode = GetBarcodeString();
-                            BarcodeScanned?.Invoke(this, new BarcodeScannedEventArgs(barcode));
+                            if(!string.IsNullOrWhiteSpace(barcode))
+                                BarcodeScanned?.Invoke(this, new BarcodeScannedEventArgs(barcode));
                         }
                         _keys.Clear();
                     }
                     else
                     {
-                        _keys.Add(key);
+                        _keys.Add(new KeyStroke{ Direction = KeyboardKeyDirection.DOWN, Key = key});
                         _timer.Start();
                     }
                 }
+                else if(nCode >= 0 && wParam == (IntPtr)WM_KEYUP)
+                {
+                    var key = this.GetKey(lParam);
 
-                return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+                    //record shift key release event so that we can determine which keys are capital
+                    if (this.IsShiftKey(key))
+                    {
+                        this._keys.Add(new KeyStroke { Direction = KeyboardKeyDirection.UP, Key = key });
+                    }
+                }
+
+                return IntPtr.Zero;
+            }
+
+            private Keys GetKey(IntPtr lParam){
+                // Extract the virtual key code
+                var vkCode = Marshal.ReadInt32(lParam);
+
+                // Convert the virtual key code to a Keys enum value
+                var key = (Keys)vkCode;
+                return key;
+            }
+
+            private bool IsShiftKey(Keys keystroke)
+            {
+                return keystroke == Keys.ShiftKey || keystroke == Keys.LShiftKey ||
+                                        keystroke == Keys.RShiftKey;
             }
 
             #endregion
